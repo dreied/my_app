@@ -48,16 +48,25 @@ android {
             applicationIdSuffix = ".debug"
         }
 
-        getByName("release") {
-            signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = true
-            isShrinkResources = false
+       getByName("release") {
+    val releaseConfig = signingConfigs.findByName("release")
 
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+    // Only sign if keystore exists (local PC)
+    if (releaseConfig?.storeFile != null) {
+        signingConfig = releaseConfig
+    } else {
+        println("⚠️ No keystore found. Building unsigned release APK.")
+    }
+
+    isMinifyEnabled = true
+    isShrinkResources = false
+
+    proguardFiles(
+        getDefaultProguardFile("proguard-android-optimize.txt"),
+        "proguard-rules.pro"
+    )
+}
+
     }
 
     compileOptions {
