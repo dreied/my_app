@@ -19,15 +19,8 @@ android {
         versionName = flutter.versionName
     }
 
-    // 🔥 ALWAYS SIGN WITH DEBUG KEYSTORE (same behavior as old Flutter)
     signingConfigs {
-        create("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-
+        // Only override RELEASE — do NOT create debug
         create("release") {
             storeFile = file("debug.keystore")
             storePassword = "android"
@@ -38,12 +31,11 @@ android {
 
     buildTypes {
         getByName("debug") {
+            // Do NOT create debug signingConfig — Flutter already has one
             applicationIdSuffix = ".debug"
-            signingConfig = signingConfigs.getByName("debug")
         }
 
         getByName("release") {
-            // 🔥 FORCE RELEASE SIGNING WITH DEBUG KEYSTORE
             signingConfig = signingConfigs.getByName("release")
 
             isMinifyEnabled = true
