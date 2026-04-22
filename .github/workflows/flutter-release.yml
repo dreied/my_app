@@ -33,7 +33,8 @@ jobs:
       # 🔥 RECREATE KEYSTORE FROM GITHUB SECRET
       - name: Recreate keystore
         run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/dpos-release-key.jks
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/app/dpos-release-key.jks
+
 
       # 🔥 CREATE key.properties FOR SIGNING
       - name: Create key.properties
