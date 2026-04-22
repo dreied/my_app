@@ -40,10 +40,11 @@ jobs:
       # 🔥 CREATE key.properties FOR SIGNING
       - name: Create key.properties
         run: |
-          echo "storeFile=dpos-release-key.jks" > android/key.properties
-          echo "storePassword=$KEYSTORE_PASSWORD" >> android/key.properties
-          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
-          echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+          echo "storeFile=dpos-release-key.jks" > android/app/key.properties
+          echo "storePassword=$KEYSTORE_PASSWORD" >> android/app/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/app/key.properties
+          echo "keyPassword=$KEY_PASSWORD" >> android/app/key.properties
+
 
 
       # 🔥 BUILD SIGNED RELEASE APK
