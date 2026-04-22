@@ -30,24 +30,11 @@ jobs:
       - name: Increase Gradle Memory
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
-      # 🔥 RECREATE KEYSTORE FROM GITHUB SECRET
-      - name: Recreate keystore
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/dpos-release-key.jks
+      # ✅ DECODE DEBUG KEYSTORE (the only keystore you need)
+      - name: Decode debug keystore
+        run: echo "$DEBUG_KEYSTORE_BASE64" | base64 --decode > android/app/debug.keystore
 
-
-
-      # 🔥 CREATE key.properties FOR SIGNING
-      - name: Create key.properties
-        run: |
-          echo "storeFile=dpos-release-key.jks" > android/app/key.properties
-          echo "storePassword=$KEYSTORE_PASSWORD" >> android/app/key.properties
-          echo "keyAlias=$KEY_ALIAS" >> android/app/key.properties
-          echo "keyPassword=$KEY_PASSWORD" >> android/app/key.properties
-
-
-
-      # 🔥 BUILD SIGNED RELEASE APK
+      # 🔥 BUILD SIGNED RELEASE APK (signed with debug keystore)
       - name: Build APK (release)
         run: flutter build apk --release --no-tree-shake-icons
 
@@ -58,7 +45,7 @@ jobs:
           VERSION_NAME=${VERSION%%+*}
           mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/DPOS_v${VERSION_NAME}.apk
 
-      # 🔥 BUILD SIGNED AAB
+      # 🔥 BUILD SIGNED AAB (also signed with debug keystore)
       - name: Build AAB (release)
         run: flutter build appbundle --release --no-tree-shake-icons
 

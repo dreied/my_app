@@ -6,67 +6,54 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
-val keystoreProperties = Properties()
-val keystorePropertiesFile = rootProject.file("key.properties")
-if (keystorePropertiesFile.exists()) {
-    keystoreProperties.load(keystorePropertiesFile.inputStream())
-}
-
 android {
     namespace = "com.example.my_app"
     compileSdk = 36
 
-   defaultConfig {
-    applicationId = "com.example.my_app"
-    minSdk = flutter.minSdkVersion
-    targetSdk = 36
+    defaultConfig {
+        applicationId = "com.example.my_app"
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
 
-    versionCode = flutter.versionCode.toInt()
-    versionName = flutter.versionName
-}
+        versionCode = flutter.versionCode.toInt()
+        versionName = flutter.versionName
+    }
 
-
+    // 🔥 ALWAYS SIGN WITH DEBUG KEYSTORE (same behavior as old Flutter)
     signingConfigs {
-    create("release") {
-        val alias = keystoreProperties["keyAlias"]?.toString()
-        val password = keystoreProperties["keyPassword"]?.toString()
-        val store = keystoreProperties["storeFile"]?.toString()
-        val storePass = keystoreProperties["storePassword"]?.toString()
+        create("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
 
-        if (alias != null && password != null && store != null && storePass != null) {
-            keyAlias = alias
-            keyPassword = password
-            storeFile = file(store)
-            storePassword = storePass
+        create("release") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
         }
     }
-}
-
 
     buildTypes {
         getByName("debug") {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("debug")
         }
 
-       getByName("release") {
-    val releaseConfig = signingConfigs.findByName("release")
+        getByName("release") {
+            // 🔥 FORCE RELEASE SIGNING WITH DEBUG KEYSTORE
+            signingConfig = signingConfigs.getByName("release")
 
-    // Only sign if keystore exists (local PC)
-    if (releaseConfig?.storeFile != null) {
-        signingConfig = releaseConfig
-    } else {
-        println("⚠️ No keystore found. Building unsigned release APK.")
-    }
+            isMinifyEnabled = true
+            isShrinkResources = false
 
-    isMinifyEnabled = true
-    isShrinkResources = false
-
-    proguardFiles(
-        getDefaultProguardFile("proguard-android-optimize.txt"),
-        "proguard-rules.pro"
-    )
-}
-
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
     }
 
     compileOptions {
