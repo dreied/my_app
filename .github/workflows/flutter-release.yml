@@ -30,24 +30,42 @@ jobs:
       - name: Increase Gradle Memory
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
+      # 🔥 RECREATE KEYSTORE FROM GITHUB SECRET
+      - name: Recreate keystore
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/dpos-release-key.jks
+
+      # 🔥 CREATE key.properties FOR SIGNING
+      - name: Create key.properties
+        run: |
+          echo "storeFile=app/dpos-release-key.jks" > android/key.properties
+          echo "storePassword=$KEYSTORE_PASSWORD" >> android/key.properties
+          echo "keyAlias=$KEY_ALIAS" >> android/key.properties
+          echo "keyPassword=$KEY_PASSWORD" >> android/key.properties
+
+      # 🔥 BUILD SIGNED RELEASE APK
       - name: Build APK (release)
         run: flutter build apk --release --no-tree-shake-icons
+
+      # 🔥 RENAME APK TO DPOS_vX.Y.Z.apk
       - name: Rename APK
         run: |
-         VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
-         VERSION_NAME=${VERSION%%+*}
-         mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/DPOS_v${VERSION_NAME}.apk
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //')
+          VERSION_NAME=${VERSION%%+*}
+          mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/DPOS_v${VERSION_NAME}.apk
 
+      # 🔥 BUILD SIGNED AAB
       - name: Build AAB (release)
         run: flutter build appbundle --release --no-tree-shake-icons
 
+      # 🔥 UPLOAD APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DPOS-apk
           path: build/app/outputs/flutter-apk/DPOS_*.apk
 
-
+      # 🔥 UPLOAD AAB
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
