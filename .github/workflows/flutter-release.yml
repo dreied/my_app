@@ -29,6 +29,8 @@ jobs:
 
       - name: Increase Gradle Memory
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
+      - name: Remove old keystore
+        run: rm -f android/app/debug.keystore
 
       # ✅ DECODE DEBUG KEYSTORE (the only keystore you need)
       - name: Decode debug keystore
