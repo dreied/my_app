@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Patch blue_thermal_printer namespace
+        run: dart tool/patch_blue_printer.dart
+
       - name: Increase Gradle Memory
         run: echo "org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m" >> android/gradle.properties
 
