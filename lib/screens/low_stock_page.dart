@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/app_database.dart';
+import '../generated/app_localizations.dart';
 
 class LowStockPage extends StatefulWidget {
   const LowStockPage({super.key});
@@ -20,7 +21,6 @@ class _LowStockPageState extends State<LowStockPage> {
   Future<void> _loadLowStock() async {
     final db = await AppDatabase.instance.database;
 
-    // You can change the threshold (default: 5)
     const threshold = 5;
 
     final result = await db.query(
@@ -35,13 +35,15 @@ class _LowStockPageState extends State<LowStockPage> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Low Stock Alerts")),
+      appBar: AppBar(title: Text(t.lowStockAlerts)),
       body: _lowStock.isEmpty
-          ? const Center(
+          ? Center(
               child: Text(
-                "All products are sufficiently stocked",
-                style: TextStyle(fontSize: 18),
+                t.allProductsSufficient,
+                style: const TextStyle(fontSize: 18),
               ),
             )
           : ListView.builder(
@@ -50,7 +52,7 @@ class _LowStockPageState extends State<LowStockPage> {
                 final p = _lowStock[i];
                 return ListTile(
                   title: Text(p['name']),
-                  subtitle: Text("Stock: ${p['stock']}"),
+                  subtitle: Text("${t.stock}: ${p['stock']}"),
                   trailing: const Icon(Icons.warning, color: Colors.red),
                 );
               },

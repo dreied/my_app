@@ -6,62 +6,111 @@ import 'package:sqflite/sqflite.dart';
 class ProductController {
   final ProductDao _dao = ProductDao();
 
-  Future<List<Product>> loadProducts() {
-    return _dao.getAll();
-  }
+  // Load only active (non-deleted) products
+  Future<List<Product>> loadProducts() async {
+    final db = await AppDatabase.instance.database;
 
-  Future<void> addProduct({
-    required String name,
-    required double purchasePrice,
-    required double sellPrice1,
-    required double sellPrice2,
-    required double sellPrice3,
-    required int stock,
-    required String unit, // NEW
-    required String barcode,
-    String? category,
-  }) async {
-    if (sellPrice1 < purchasePrice ||
-        sellPrice2 < purchasePrice ||
-        sellPrice3 < purchasePrice) {
-      throw Exception("Sell price cannot be lower than purchase price");
-    }
-
-    final product = Product(
-      name: name,
-      purchasePrice: purchasePrice,
-      sellPrice1: sellPrice1,
-      sellPrice2: sellPrice2,
-      sellPrice3: sellPrice3,
-      stock: stock,
-      unit: unit, // NEW
-      barcode: barcode,
-      category: category,
+    final rows = await db.query(
+      'products',
+      where: 'is_deleted = 0',
     );
 
-    await _dao.insert(product);
+    return rows.map((e) => Product.fromMap(e)).toList();
   }
 
+  // Load deleted products (Trash Bin)
+  Future<List<Product>> loadDeletedProducts() async {
+    final db = await AppDatabase.instance.database;
+
+    final rows = await db.query(
+      'products',
+      where: 'is_deleted = 1',
+    );
+
+    return rows.map((e) => Product.fromMap(e)).toList();
+  }
+
+  // Add new product
+ Future<void> addProduct({
+  required String name,
+  required double purchasePrice,
+  required double sellPrice1,
+  required double sellPrice2,
+  required double sellPrice3,
+  required int stock,
+  required String unit,
+  required String barcode,
+  String? category,
+}) async {
+
+  final product = Product(
+    name: name,
+    purchasePrice: purchasePrice,
+    sellPrice1: sellPrice1,
+    sellPrice2: sellPrice2,
+    sellPrice3: sellPrice3,
+    stock: stock,
+    unit: unit,
+    barcode: barcode,
+    category: category,
+    isDeleted: 0,
+  );
+
+  await _dao.insert(product);
+}
+
+
+  // Update product
   Future<void> updateProduct(Product product) async {
-    if (product.sellPrice1 < product.purchasePrice ||
-        product.sellPrice2 < product.purchasePrice ||
-        product.sellPrice3 < product.purchasePrice) {
-      throw Exception("Sell price cannot be lower than purchase price");
-    }
+  
 
     await _dao.update(product);
   }
 
-  Future<void> deleteProduct(int id) async {
-    await _dao.delete(id);
+  // SOFT DELETE (move to trash)
+  Future<void> softDeleteProduct(int id) async {
+    final db = await AppDatabase.instance.database;
+
+    await db.update(
+      'products',
+      {'is_deleted': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    // Log deletion
+    await db.insert('inventory_log', {
+      'product_id': id,
+      'change_qty': 0,
+      'datetime': DateTime.now().toIso8601String(),
+    });
   }
 
+  // RESTORE from trash
+  Future<void> restoreProduct(int id) async {
+    final db = await AppDatabase.instance.database;
+
+    await db.update(
+      'products',
+      {'is_deleted': 0},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  // PERMANENT DELETE (only used inside Trash Bin)
+  Future<void> deleteForever(int id) async {
+    final db = await AppDatabase.instance.database;
+    await db.delete('products', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // Get product by barcode
   Future<Product?> getByBarcode(String barcode) async {
     final db = await AppDatabase.instance.database;
 
     final result = await db.query(
       'products',
-      where: 'barcode = ?',
+      where: 'barcode = ? AND is_deleted = 0',
       whereArgs: [barcode],
     );
 
@@ -71,26 +120,28 @@ class ProductController {
     return null;
   }
 
+  // Check if barcode exists
   Future<bool> barcodeExists(String barcode, {int? excludeId}) async {
     final db = await AppDatabase.instance.database;
 
     final result = await db.query(
       'products',
       where: excludeId == null
-          ? 'barcode = ?'
-          : 'barcode = ? AND id != ?',
+          ? 'barcode = ? AND is_deleted = 0'
+          : 'barcode = ? AND id != ? AND is_deleted = 0',
       whereArgs: excludeId == null ? [barcode] : [barcode, excludeId],
     );
 
     return result.isNotEmpty;
   }
 
+  // Find by name or barcode
   Future<Product?> findByNameOrBarcode(String name, String barcode) async {
     final db = await AppDatabase.instance.database;
 
     final result = await db.query(
       'products',
-      where: 'name = ? OR barcode = ?',
+      where: '(name = ? OR barcode = ?) AND is_deleted = 0',
       whereArgs: [name, barcode],
     );
 
@@ -100,23 +151,20 @@ class ProductController {
     return null;
   }
 
-  // ---------------------------------------------------------
-  // CATEGORY USAGE COUNT (for protection + display)
-  // ---------------------------------------------------------
+
+  // Count products in category
   Future<int> countProductsInCategory(String category) async {
     final db = await AppDatabase.instance.database;
 
     final result = await db.rawQuery(
-      "SELECT COUNT(*) as count FROM products WHERE category = ?",
+      "SELECT COUNT(*) as count FROM products WHERE category = ? AND is_deleted = 0",
       [category],
     );
 
     return Sqflite.firstIntValue(result) ?? 0;
   }
 
-  // ---------------------------------------------------------
-  // BARCODE GENERATOR
-  // ---------------------------------------------------------
+  // Generate unique barcode
   Future<String> generateUniqueBarcode() async {
     final db = await AppDatabase.instance.database;
 
@@ -126,7 +174,7 @@ class ProductController {
 
       final result = await db.query(
         'products',
-        where: 'barcode = ?',
+        where: 'barcode = ? AND is_deleted = 0',
         whereArgs: [barcode],
       );
 
@@ -134,5 +182,34 @@ class ProductController {
         return barcode;
       }
     }
+  }
+
+  // Get product by ID
+  Future<Product> getProduct(int productId) async {
+    final db = await AppDatabase.instance.database;
+
+    final result = await db.query(
+      'products',
+      where: 'id = ? AND is_deleted = 0',
+      whereArgs: [productId],
+    );
+
+    if (result.isEmpty) {
+      throw Exception("Product not found: $productId");
+    }
+
+    return Product.fromMap(result.first);
+  }
+
+  // Update stock
+  Future<void> updateStock(int productId, int newStock) async {
+    final db = await AppDatabase.instance.database;
+
+    await db.update(
+      'products',
+      {'stock': newStock},
+      where: 'id = ?',
+      whereArgs: [productId],
+    );
   }
 }

@@ -34,13 +34,13 @@ class InventoryController {
     required double sellPrice3,
     required int stock,
     required String barcode,
-    String unit = "pieces", // NEW DEFAULT
+    String unit = "pieces",
     String? category,
   }) async {
     final existing = await findByNameOrBarcode(name, barcode);
 
     if (existing != null) {
-      return existing; // UI will show dialog
+      return existing; // UI will show merge dialog
     }
 
     final product = Product(
@@ -50,9 +50,10 @@ class InventoryController {
       sellPrice2: sellPrice2,
       sellPrice3: sellPrice3,
       stock: stock,
-      unit: unit, // NEW
+      unit: unit,
       barcode: barcode,
       category: category,
+      isDeleted: 0,
     );
 
     await _productDao.insert(product);
@@ -68,9 +69,10 @@ class InventoryController {
       sellPrice2: existing.sellPrice2,
       sellPrice3: existing.sellPrice3,
       stock: existing.stock + addedStock,
-      unit: existing.unit, // NEW
+      unit: existing.unit,
       barcode: existing.barcode,
       category: existing.category,
+      isDeleted: existing.isDeleted,
     );
 
     await _productDao.update(updated);
@@ -80,7 +82,18 @@ class InventoryController {
     await _productDao.update(product);
   }
 
-  Future<void> deleteProduct(int id) async {
-    await _productDao.delete(id);
+  // ⭐ Soft delete (Move to Trash)
+  Future<void> softDeleteProduct(int id) async {
+    await _productDao.softDelete(id);
+  }
+
+  // ⭐ Restore from Trash
+  Future<void> restoreProduct(int id) async {
+    await _productDao.restore(id);
+  }
+
+  // ⭐ Permanent delete (Trash Bin only)
+  Future<void> deleteForever(int id) async {
+    await _productDao.deleteForever(id);
   }
 }

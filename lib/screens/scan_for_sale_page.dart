@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../controllers/product_controller.dart';
 import '../models/product.dart';
-import '../scan_screen.dart';
+import '../widgets/full_screen_scanner.dart';
+import '../generated/app_localizations.dart';
 
 class ScanForSalePage extends StatelessWidget {
   final Function(Product) onProductFound;
@@ -12,7 +13,9 @@ class ScanForSalePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScanScreen(
+    final t = AppLocalizations.of(context)!;
+
+    return FullScreenScanner(
       onScan: (barcode) async {
         Product? p = await controller.getByBarcode(barcode);
 
@@ -21,7 +24,7 @@ class ScanForSalePage extends StatelessWidget {
           Navigator.pop(context);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Product not found")),
+            SnackBar(content: Text(t.productNotFound)),
           );
         }
       },

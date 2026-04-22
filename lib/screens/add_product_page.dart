@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import '../controllers/product_controller.dart';
 import '../database/category_dao.dart';
 import '../models/category.dart';
 import '../models/product.dart';
 import 'edit_product_page.dart';
+import '../widgets/embedded_scanner_box.dart';
+import '../generated/app_localizations.dart';
+import '../utils/error_handler.dart';
+import '../services/activation_service.dart';
+
 
 class AddProductPage extends StatefulWidget {
   final String? initialBarcode;
@@ -27,13 +31,12 @@ class _AddProductPageState extends State<AddProductPage> {
   final TextEditingController _stockController = TextEditingController();
   final TextEditingController _barcodeController = TextEditingController();
   final TextEditingController _categoryController = TextEditingController();
-
-  // NEW — unit controller
   final TextEditingController _unitController =
       TextEditingController(text: "pieces");
 
   List<Category> _categories = [];
   bool _saving = false;
+  bool showScanner = false;
 
   @override
   void initState() {
@@ -45,89 +48,52 @@ class _AddProductPageState extends State<AddProductPage> {
     }
   }
 
-  // ---------------------------------------------------------
-  // LOAD CATEGORIES
-  // ---------------------------------------------------------
   Future<void> _loadCategories() async {
     final list = await _categoryDao.getAll();
     setState(() => _categories = list);
   }
 
-  // ---------------------------------------------------------
-  // ADD NEW CATEGORY
-  // ---------------------------------------------------------
   Future<String?> _showAddCategoryDialog() async {
+    final t = AppLocalizations.of(context)!;
     final controller = TextEditingController();
 
     return showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Add New Category"),
+        title: Text(t.addNewCategoryDialog),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            labelText: "Category Name",
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: t.categoryName,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
+            child: Text(t.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text("Add"),
+            child: Text(t.add),
           ),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------
-  // BARCODE SCAN
-  // ---------------------------------------------------------
-  Future<void> _scanBarcode() async {
-    final controller = MobileScannerController();
-    String? scannedCode;
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text("Scan Barcode")),
-          body: MobileScanner(
-            controller: controller,
-            onDetect: (capture) {
-              final barcode = capture.barcodes.first;
-              scannedCode = barcode.rawValue;
-              controller.stop();
-              Navigator.pop(context);
-            },
-          ),
-        ),
-      ),
-    );
-
-    if (scannedCode != null && scannedCode!.isNotEmpty) {
-      setState(() => _barcodeController.text = scannedCode!);
-    }
-  }
-
-  // ---------------------------------------------------------
-  // DUPLICATE PRODUCT DIALOG
-  // ---------------------------------------------------------
   void _showDuplicateDialog(Product existing, int addedStock) {
+    final t = AppLocalizations.of(context)!;
+
     showDialog(
       context: context,
       builder: (_) {
         return AlertDialog(
-          title: const Text("Product Already Exists"),
+          title: Text(t.productExists),
           content: Text(
-            "This product already exists:\n\n"
-            "Name: ${existing.name}\n"
-            "Barcode: ${existing.barcode}\n\n"
-            "What do you want to do?",
+            "${t.productExistsDetails}\n\n"
+            "${t.productName}: ${existing.name}\n"
+            "${t.barcode}: ${existing.barcode}\n\n"
           ),
           actions: [
             TextButton(
@@ -140,7 +106,7 @@ class _AddProductPageState extends State<AddProductPage> {
                   ),
                 );
               },
-              child: const Text("Modify Prices"),
+              child: Text(t.modifyPrices),
             ),
             TextButton(
               onPressed: () async {
@@ -154,7 +120,7 @@ class _AddProductPageState extends State<AddProductPage> {
                   sellPrice2: existing.sellPrice2,
                   sellPrice3: existing.sellPrice3,
                   stock: existing.stock + addedStock,
-                  unit: existing.unit, // NEW
+                  unit: existing.unit,
                   barcode: existing.barcode,
                   category: existing.category,
                 );
@@ -162,7 +128,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 await _controller.updateProduct(updated);
                 Navigator.pop(context, true);
               },
-              child: const Text("Add to Inventory"),
+              child: Text(t.addToInventory),
             ),
           ],
         );
@@ -170,92 +136,162 @@ class _AddProductPageState extends State<AddProductPage> {
     );
   }
 
-  // ---------------------------------------------------------
-  // SAVE PRODUCT
-  // ---------------------------------------------------------
-  Future<void> _saveProduct() async {
-    final name = _nameController.text.trim();
-    final purchase = double.tryParse(_purchaseController.text.trim()) ?? 0;
-    final sell1 = double.tryParse(_sell1Controller.text.trim()) ?? 0;
-    final sell2 = double.tryParse(_sell2Controller.text.trim()) ?? 0;
-    final sell3 = double.tryParse(_sell3Controller.text.trim()) ?? 0;
-    final stock = int.tryParse(_stockController.text.trim()) ?? 0;
-    String barcode = _barcodeController.text.trim();
-    final category = _categoryController.text.trim();
-    final unit = _unitController.text.trim(); // NEW
+Future<void> _saveProduct() async {
+  final t = AppLocalizations.of(context)!;
 
-    if (barcode.isEmpty) {
-      barcode = await _controller.generateUniqueBarcode();
-    }
+  // ⭐ LIMIT: Only 5 products allowed if NOT activated
+  final activated = await ActivationService.isActivated();
+  final count = await ActivationService.getProductCount();
 
-    if (name.isEmpty ||
-        purchase <= 0 ||
-        sell1 <= 0 ||
-        sell2 <= 0 ||
-        sell3 <= 0 ||
-        stock < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please enter valid product details")),
-      );
-      return;
-    }
+  if (!activated && count >= 5) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.limitProducts))
 
-    if (sell1 < purchase || sell2 < purchase || sell3 < purchase) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("لا يمكن أن يكون سعر البيع أقل من سعر الشراء")),
-      );
-      return;
-    }
+    );
+    return;
+  }
 
-    // DUPLICATE CHECK
-    final existing = await _controller.findByNameOrBarcode(name, barcode);
+  final name = _nameController.text.trim();
+  final purchase = double.tryParse(_purchaseController.text.trim()) ?? 0;
+  final sell1 = double.tryParse(_sell1Controller.text.trim()) ?? 0;
+  final sell2 = double.tryParse(_sell2Controller.text.trim()) ?? 0;
+  final sell3 = double.tryParse(_sell3Controller.text.trim()) ?? 0;
+  final stock = int.tryParse(_stockController.text.trim()) ?? 0;
+  String barcode = _barcodeController.text.trim();
+  final category = _categoryController.text.trim();
+  final unit = _unitController.text.trim();
 
-    if (existing != null) {
-      if (existing.barcode == barcode && barcode.isNotEmpty) {
-        _showDuplicateDialog(existing, stock);
-        return;
-      }
+  if (barcode.isEmpty) {
+    barcode = await _controller.generateUniqueBarcode();
+  }
 
-      if (existing.name == name && existing.category == category) {
-        _showDuplicateDialog(existing, stock);
-        return;
-      }
-    }
+  if (name.isEmpty ||
+      purchase <= 0 ||
+      sell1 <= 0 ||
+      sell2 <= 0 ||
+      stock < 0) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.invalidProductDetails)),
+    );
+    return;
+  }
 
-    setState(() => _saving = true);
+  if (sell1 < purchase || sell2 < purchase) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(t.sellBelowPurchase)),
+  );
+  return;
+}
+// ⭐ Sell Price 3 can be empty. Only validate if user typed something.
+if (_sell3Controller.text.trim().isNotEmpty) {
+  final sell3 = double.tryParse(_sell3Controller.text.trim()) ?? 0;
 
+  if (sell3 < purchase) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.sellBelowPurchase)),
+    );
+    return;
+  }
+}
+
+
+
+  final existing = await _controller.findByNameOrBarcode(name, barcode);
+  if (existing != null) {
+    _showDuplicateDialog(existing, stock);
+    return;
+  }
+
+  int finalStock = stock;
+  if (unit == "dozen") finalStock = stock * 12;
+  if (unit == "half") finalStock = stock * 6;
+
+  setState(() => _saving = true);
+
+  try {
     await _controller.addProduct(
       name: name,
       purchasePrice: purchase,
       sellPrice1: sell1,
       sellPrice2: sell2,
       sellPrice3: sell3,
-      stock: stock,
-      unit: unit, // NEW
+      stock: finalStock,
+      unit: unit,
       barcode: barcode,
       category: category.isEmpty ? null : category,
     );
 
+    // ⭐ INCREMENT PRODUCT COUNTER
+    await ActivationService.incrementProduct();
+
     setState(() => _saving = false);
     Navigator.pop(context, true);
+  } catch (e) {
+    setState(() => _saving = false);
+    showActivationError(context, e);
   }
+}
 
-  // ---------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------
+
+
+
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Add Product")),
+      appBar: AppBar(title: Text(t.addProduct)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            if (showScanner)
+  SizedBox(
+    height: 160,
+    child: EmbeddedScannerBox(
+      onScanned: (code) async {
+        setState(() {
+          showScanner = false;
+          _barcodeController.text = code; // ⭐ fill current form
+        });
+
+        final existing = await _controller.getByBarcode(code);
+
+        if (existing != null) {
+          final t = AppLocalizations.of(context)!;
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: Text(t.barcodeExists),
+              content: Text("${t.productFound}: ${existing.name}\n${t.modifyQuestion}"),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context, false), child: Text(t.no)),
+                ElevatedButton(onPressed: () => Navigator.pop(context, true), child: Text(t.yes)),
+              ],
+            ),
+          );
+
+          if (confirm == true) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => EditProductPage(product: existing)),
+            );
+          }
+        }
+      },
+    ),
+  ),
+
+const SizedBox(height: 12),
+
+
+            const SizedBox(height: 12),
+
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: "Product Name",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.productName,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -264,9 +300,9 @@ class _AddProductPageState extends State<AddProductPage> {
               value: _categoryController.text.isEmpty
                   ? null
                   : _categoryController.text,
-              decoration: const InputDecoration(
-                labelText: "Category",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.category,
+                border: const OutlineInputBorder(),
               ),
               items: [
                 ..._categories.map(
@@ -287,13 +323,13 @@ class _AddProductPageState extends State<AddProductPage> {
                     ),
                   ),
                 ),
-                const DropdownMenuItem(
+                DropdownMenuItem(
                   value: "__add_new__",
                   child: Row(
                     children: [
-                      Icon(Icons.add, color: Colors.blue),
-                      SizedBox(width: 8),
-                      Text("Add New Category"),
+                      const Icon(Icons.add, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      Text(t.addNewCategory),
                     ],
                   ),
                 ),
@@ -318,9 +354,9 @@ class _AddProductPageState extends State<AddProductPage> {
             TextField(
               controller: _purchaseController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Purchase Price",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.purchasePrice,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -328,9 +364,9 @@ class _AddProductPageState extends State<AddProductPage> {
             TextField(
               controller: _sell1Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 1 (مفرق)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice1,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -338,9 +374,9 @@ class _AddProductPageState extends State<AddProductPage> {
             TextField(
               controller: _sell2Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 2 (جملة)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice2,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -348,9 +384,9 @@ class _AddProductPageState extends State<AddProductPage> {
             TextField(
               controller: _sell3Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 3 (مخصص)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice3,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -358,32 +394,31 @@ class _AddProductPageState extends State<AddProductPage> {
             TextField(
               controller: _stockController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Stock",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.stock,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
 
-            // NEW — UNIT DROPDOWN
             DropdownButtonFormField<String>(
               value: _unitController.text,
-              decoration: const InputDecoration(
-                labelText: "Unit",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.unit,
+                border: const OutlineInputBorder(),
               ),
-              items: const [
+              items: [
                 DropdownMenuItem(
                   value: "pieces",
-                  child: Text("Pieces"),
+                  child: Text(t.pieces),
                 ),
                 DropdownMenuItem(
                   value: "half",
-                  child: Text("Half‑Dozen (6)"),
+                  child: Text(t.halfDozen),
                 ),
                 DropdownMenuItem(
                   value: "dozen",
-                  child: Text("Dozen (12)"),
+                  child: Text(t.dozen),
                 ),
               ],
               onChanged: (value) {
@@ -400,15 +435,20 @@ class _AddProductPageState extends State<AddProductPage> {
                 Expanded(
                   child: TextField(
                     controller: _barcodeController,
-                    decoration: const InputDecoration(
-                      labelText: "Barcode",
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: t.barcode,
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
+
                 ElevatedButton(
-                  onPressed: _scanBarcode,
+                  onPressed: () {
+                    setState(() {
+                      showScanner = !showScanner;
+                    });
+                  },
                   child: const Icon(Icons.qr_code_scanner),
                 ),
               ],
@@ -422,7 +462,7 @@ class _AddProductPageState extends State<AddProductPage> {
                 onPressed: _saving ? null : _saveProduct,
                 child: _saving
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text("Save Product"),
+                    : Text(t.saveProduct),
               ),
             ),
           ],

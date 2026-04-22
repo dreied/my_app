@@ -35,7 +35,6 @@ class MainActivity : FlutterActivity() {
                         return@setMethodCallHandler
                     }
 
-                    // Prevent overlapping requests
                     if (pendingResult != null) {
                         result.success(false)
                         return@setMethodCallHandler
@@ -59,6 +58,7 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+    @Deprecated("Deprecated in API 33")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
 
@@ -68,13 +68,11 @@ class MainActivity : FlutterActivity() {
         val bytes = pendingBytes
         val mime = pendingMime
 
-        // Reset pending state
         pendingResult = null
         pendingBytes = null
         pendingMime = null
         pendingFileName = null
 
-        // User cancelled or invalid data
         if (resultCode != Activity.RESULT_OK || data == null || bytes == null || mime == null) {
             result?.success(false)
             return

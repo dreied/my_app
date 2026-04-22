@@ -1,50 +1,82 @@
-import 'package:sqflite/sqflite.dart';
-import 'app_database.dart';
 import '../models/category.dart';
-
+import '../services/icon_loader.dart';
+import 'app_database.dart';
 
 class CategoryDao {
-  Future<int> insert(Category category) async {
-    final db = await AppDatabase.instance.database;
-    return db.insert('categories', category.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
+  static List<String> validIcons = [];
+
+  static Future<void> initializeIcons() async {
+    validIcons = await IconLoader.loadIcons();
+    if (validIcons.isEmpty) validIcons = ["bar.png"];
   }
 
-  Future<List<Category>> getAll() async {
-    final db = await AppDatabase.instance.database;
-    final result = await db.query('categories', orderBy: 'name ASC');
-    return result.map((e) => Category.fromMap(e)).toList();
+  String _sanitizeIcon(String? icon) {
+    if (icon == null || icon.isEmpty) return "bar.png";
+    if (!icon.contains(".")) icon = "$icon.png";
+    if (!validIcons.contains(icon)) return "bar.png";
+    return icon;
   }
 
-  Future<int> update(Category category) async {
+  Future<void> insert(Category category) async {
     final db = await AppDatabase.instance.database;
-    return db.update(
-      'categories',
-      category.toMap(),
-      where: 'id = ?',
+    await db.insert("categories", {
+      "name": category.name,
+      "color": category.color,
+      "icon": _sanitizeIcon(category.icon),
+    });
+  }
+
+  Future<void> update(Category category) async {
+    final db = await AppDatabase.instance.database;
+    await db.update(
+      "categories",
+      {
+        "name": category.name,
+        "color": category.color,
+        "icon": _sanitizeIcon(category.icon),
+      },
+      where: "id = ?",
       whereArgs: [category.id],
     );
   }
 
-  Future<int> delete(int id) async {
+  Future<void> delete(int id) async {
     final db = await AppDatabase.instance.database;
-    return db.delete(
-      'categories',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    await db.delete("categories", where: "id = ?", whereArgs: [id]);
   }
 
-  Future<Category?> findByName(String name) async {
+  // FIXED: use category NAME, not ID
+  Future<bool> hasProducts(String categoryName) async {
     final db = await AppDatabase.instance.database;
-    final result = await db.query(
-      'categories',
-      where: 'name = ?',
-      whereArgs: [name],
+    final result = await db.rawQuery(
+      "SELECT COUNT(*) AS count FROM products WHERE category = ?",
+      [categoryName],
     );
-    if (result.isNotEmpty) {
-      return Category.fromMap(result.first);
-    }
-    return null;
+    return (result.first["count"] as int) > 0;
+  }
+
+  // FIXED: use category NAME, not ID
+  Future<int> getProductCount(String categoryName) async {
+    final db = await AppDatabase.instance.database;
+    final result = await db.rawQuery(
+      "SELECT COUNT(*) AS count FROM products WHERE category = ?",
+      [categoryName],
+    );
+    return result.first["count"] as int;
+  }
+
+  Future<List<Category>> getAll() async {
+    final db = await AppDatabase.instance.database;
+    final rows = await db.query("categories");
+
+    return rows.map((row) {
+      return Category(
+        id: row["id"] as int?,
+        name: row["name"] as String,
+        color: row["color"] as String?,
+        icon: _sanitizeIcon(row["icon"] as String?),
+        productCount: 0, // will be filled later
+      );
+    }).toList();
   }
 }

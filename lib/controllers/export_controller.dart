@@ -360,263 +360,239 @@ class ExportController {
   // ---------------------------------------------------------------------------
 
   Future<Uint8List> _buildPdfBytes(
-    List<Product> products,
-    Map<String, bool> selected,
-  ) async {
-    // Load fonts
-    final arabicFont = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/NotoNaskhArabic-Regular.ttf'),
-    );
-    final englishFont = pw.Font.ttf(
-      await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
-    );
+  List<Product> products,
+  Map<String, bool> selected,
+) async {
+  final arabicFont = pw.Font.ttf(
+    await rootBundle.load('assets/fonts/NotoNaskhArabic-Regular.ttf'),
+  );
+  final englishFont = pw.Font.ttf(
+    await rootBundle.load('assets/fonts/Roboto-Regular.ttf'),
+  );
 
-    pw.Font pickFont(String text) {
-      return isArabic(text) ? arabicFont : englishFont;
-    }
+  pw.Font pickFont(String text) {
+    return isArabic(text) ? arabicFont : englishFont;
+  }
 
-    final pdf = pw.Document();
+  final pdf = pw.Document();
 
-    final rawName = _settings.storeName.trim();
-    final isArabicName = isArabic(rawName);
+  final rawName = _settings.storeName.trim();
+  final isArabicName = isArabic(rawName);
+  final storeName = rawName.isEmpty ? _t('inventory_report') : rawName;
+  final isArabicApp = _settings.language == 'ar';
 
-    final storeName = rawName.isEmpty ? _t('inventory_report') : rawName;
+  final headers = _buildHeaderList(selected);
 
-    final isArabicApp = _settings.language == 'ar';
+  final data = products.map((p) {
+    final row = <String>[];
+    if (selected['barcode'] == true) row.add(p.barcode);
+    if (selected['name'] == true) row.add(p.name);
+    if (selected['category'] == true) row.add(p.category ?? '');
+    if (selected['stock'] == true) row.add(_stockDisplay(p));
+    if (selected['purchase'] == true) row.add(p.purchasePrice.toStringAsFixed(2));
+    if (selected['sell1'] == true) row.add(p.sellPrice1.toStringAsFixed(2));
+    if (selected['sell2'] == true) row.add(p.sellPrice2.toStringAsFixed(2));
+    if (selected['sell3'] == true) row.add(p.sellPrice3.toStringAsFixed(2));
+    if (selected['total'] == true) row.add(_totalValue(p).toStringAsFixed(2));
+    return row;
+  }).toList();
 
-    // Build headers
-    final headers = _buildHeaderList(selected);
-
-    // Build data rows
-    final data = products.map((p) {
-      final row = <String>[];
-
-      if (selected['barcode'] == true) row.add(p.barcode);
-      if (selected['name'] == true) row.add(p.name);
-      if (selected['category'] == true) row.add(p.category ?? '');
-      if (selected['stock'] == true) row.add(_stockDisplay(p));
-      if (selected['purchase'] == true) row.add(p.purchasePrice.toStringAsFixed(2));
-      if (selected['sell1'] == true) row.add(p.sellPrice1.toStringAsFixed(2));
-      if (selected['sell2'] == true) row.add(p.sellPrice2.toStringAsFixed(2));
-      if (selected['sell3'] == true) row.add(p.sellPrice3.toStringAsFixed(2));
-      if (selected['total'] == true) row.add(_totalValue(p).toStringAsFixed(2));
-
-      return row;
-    }).toList();
-
-    // -----------------------------------------------------------------------
-    // HYBRID COLUMN WIDTHS (C1)
-    // -----------------------------------------------------------------------
-    final fixedWidths = <String, double>{
-  'barcode': 130,   // was 120
-  'category': 110,  // was 100
-  'stock': 130,     // was 120
-  'purchase': 75,   // was 70
-  'sell1': 75,
-  'sell2': 75,
-  'sell3': 75,
-  'total': 120,     // was 110
+  final fixedWidths = <String, double>{
+  'barcode': 130,
+  'name': 160,
+  'category': 110,
+  'stock': 130,
+  'purchase': 120,   // widened
+  'sell1': 95,      // widened
+  'sell2': 95,      // widened
+  'sell3': 95,      // widened
+  'total': 120,
 };
 
 
-    final selectedKeys = <String>[];
-    if (selected['barcode'] == true) selectedKeys.add('barcode');
-    if (selected['name'] == true) selectedKeys.add('name');
-    if (selected['category'] == true) selectedKeys.add('category');
-    if (selected['stock'] == true) selectedKeys.add('stock');
-    if (selected['purchase'] == true) selectedKeys.add('purchase');
-    if (selected['sell1'] == true) selectedKeys.add('sell1');
-    if (selected['sell2'] == true) selectedKeys.add('sell2');
-    if (selected['sell3'] == true) selectedKeys.add('sell3');
-    if (selected['total'] == true) selectedKeys.add('total');
+  final selectedKeys = <String>[];
+  if (selected['barcode'] == true) selectedKeys.add('barcode');
+  if (selected['name'] == true) selectedKeys.add('name');
+  if (selected['category'] == true) selectedKeys.add('category');
+  if (selected['stock'] == true) selectedKeys.add('stock');
+  if (selected['purchase'] == true) selectedKeys.add('purchase');
+  if (selected['sell1'] == true) selectedKeys.add('sell1');
+  if (selected['sell2'] == true) selectedKeys.add('sell2');
+  if (selected['sell3'] == true) selectedKeys.add('sell3');
+  if (selected['total'] == true) selectedKeys.add('total');
 
-    final columnWidths = <int, pw.TableColumnWidth>{};
-
-    for (var i = 0; i < selectedKeys.length; i++) {
-      final key = selectedKeys[i];
-
-      if (key == 'name') {
-        columnWidths[i] = const pw.FlexColumnWidth();
-      } else {
-        columnWidths[i] = pw.FixedColumnWidth(fixedWidths[key]!);
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // TOTAL CALCULATION
-    // -----------------------------------------------------------------------
-    double grandTotal = 0;
-    if (selected['total'] == true) {
-      for (final p in products) {
-        grandTotal += _totalValue(p);
-      }
-    }
-
-    // -----------------------------------------------------------------------
-    // LOAD LOGO IF EXISTS
-    // -----------------------------------------------------------------------
-    pw.ImageProvider? logoImage;
-    try {
-      if (_settings.storeLogoPath.isNotEmpty) {
-        final logoFile = File(_settings.storeLogoPath);
-        if (await logoFile.exists()) {
-          final bytes = await logoFile.readAsBytes();
-          logoImage = pw.MemoryImage(bytes);
-        }
-      }
-    } catch (_) {
-      logoImage = null;
-    }
-
-    // -----------------------------------------------------------------------
-    // BUILD PDF PAGE
-    // -----------------------------------------------------------------------
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(24),
-        textDirection:
-            isArabicApp ? pw.TextDirection.rtl : pw.TextDirection.ltr,
-        build: (context) => [
-          if (logoImage != null)
-            pw.Center(
-              child: pw.Image(logoImage!, width: 80, height: 80),
-            ),
-
-          pw.SizedBox(height: 8),
-
-          pw.Center(
-            child: pw.Text(
-              storeName,
-              textDirection:
-                  isArabicName ? pw.TextDirection.rtl : pw.TextDirection.ltr,
-              style: pw.TextStyle(
-                font: pickFont(storeName),
-                fontSize: 20,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-
-          pw.SizedBox(height: 4),
-
-          pw.Center(
-            child: pw.Text(
-              "${_t('inventory_report')} - ${_formatDateTime()}",
-              style: pw.TextStyle(
-                font: pickFont(_t('inventory_report')),
-                fontSize: 10,
-              ),
-            ),
-          ),
-
-          pw.SizedBox(height: 16),
-
-          // -------------------------------------------------------------------
-          // TABLE — WITH TOTAL ROW INSIDE
-          // -------------------------------------------------------------------
-          pw.Table(
-            columnWidths: columnWidths,
-            border: pw.TableBorder.all(color: PdfColors.grey300),
-            children: [
-              // Header row
-              pw.TableRow(
-  decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
-  children: [
-    for (var h in headers)
-      pw.Container(
-        padding: const pw.EdgeInsets.all(4),
-        alignment: pw.Alignment.center,
-        child: pw.Directionality(
-          textDirection: isArabic(h)
-              ? pw.TextDirection.rtl
-              : pw.TextDirection.ltr,
-          child: pw.Text(
-            h,
-            style: pw.TextStyle(
-              font: pickFont(h),
-              fontWeight: pw.FontWeight.bold,
-              color: PdfColors.white,
-              fontSize: 9, // was 10
-            ),
-            maxLines: 1,
-            softWrap: false,
-            overflow: pw.TextOverflow.clip,
-          ),
-        ),
-      ),
-  ],
-),
-
-
-              // Data rows
-              for (var row in data)
-  pw.TableRow(
-    children: [
-      for (var cell in row)
-        pw.Container(
-          padding: const pw.EdgeInsets.all(4),
-          alignment: pw.Alignment.center,
-          child: pw.Directionality(
-            textDirection: isArabic(cell)
-                ? pw.TextDirection.rtl
-                : pw.TextDirection.ltr,
-            child: pw.Text(
-              cell,
-              style: pw.TextStyle(
-                font: pickFont(cell),
-                fontSize: 8, // was 9
-              ),
-              maxLines: 1,
-              softWrap: false,
-              overflow: pw.TextOverflow.clip,
-            ),
-          ),
-        ),
-    ],
-  ),
-
-
-              // TOTAL ROW (INSIDE TABLE)
-              if (selected['total'] == true)
-                pw.TableRow(
-                  children: [
-                    for (var i = 0; i < selectedKeys.length; i++)
-                      pw.Container(
-                        padding: const pw.EdgeInsets.all(4),
-                        alignment: pw.Alignment.center,
-                        child: (selectedKeys[i] == 'total')
-                            ? pw.Text(
-                                grandTotal.toStringAsFixed(2),
-                                style: pw.TextStyle(
-                                  font: pickFont(grandTotal.toString()),
-                                  fontWeight: pw.FontWeight.bold,
-                                  fontSize: 10,
-                                ),
-                              )
-                            : (selectedKeys[i] ==
-                                    selectedKeys[selectedKeys.length - 2]
-                                ? pw.Text(
-                                    _t('total'),
-                                    style: pw.TextStyle(
-                                      font: pickFont(_t('total')),
-                                      fontWeight: pw.FontWeight.bold,
-                                      fontSize: 10,
-                                    ),
-                                  )
-                                : pw.Text("")),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-
-    return pdf.save();
+  final columnWidths = <int, pw.TableColumnWidth>{};
+  for (var i = 0; i < selectedKeys.length; i++) {
+    final key = selectedKeys[i];
+    columnWidths[i] = pw.FixedColumnWidth(fixedWidths[key]!);
   }
 
+  final nameColumnIndex = selectedKeys.indexOf('name');
+
+  double grandTotal = 0;
+  if (selected['total'] == true) {
+    for (final p in products) {
+      grandTotal += _totalValue(p);
+    }
+  }
+
+  pw.ImageProvider? logoImage;
+  try {
+    if (_settings.storeLogoPath.isNotEmpty) {
+      final logoFile = File(_settings.storeLogoPath);
+      if (await logoFile.exists()) {
+        final bytes = await logoFile.readAsBytes();
+        logoImage = pw.MemoryImage(bytes);
+      }
+    }
+  } catch (_) {
+    logoImage = null;
+  }
+
+  pdf.addPage(
+    pw.MultiPage(
+      pageFormat: PdfPageFormat.a4,
+      margin: const pw.EdgeInsets.all(24),
+      textDirection: isArabicApp ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+      build: (context) => [
+        if (logoImage != null)
+          pw.Center(child: pw.Image(logoImage!, width: 80, height: 80)),
+
+        pw.SizedBox(height: 8),
+
+        pw.Center(
+          child: pw.Text(
+            storeName,
+            textDirection: isArabicName ? pw.TextDirection.rtl : pw.TextDirection.ltr,
+            style: pw.TextStyle(
+              font: pickFont(storeName),
+              fontSize: 20,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ),
+
+        pw.SizedBox(height: 4),
+
+        pw.Center(
+          child: pw.Text(
+            "${_t('inventory_report')} - ${_formatDateTime()}",
+            style: pw.TextStyle(
+              font: pickFont(_t('inventory_report')),
+              fontSize: 10,
+            ),
+          ),
+        ),
+
+        pw.SizedBox(height: 16),
+
+        pw.Table(
+          columnWidths: columnWidths,
+          border: pw.TableBorder.all(color: PdfColors.grey300),
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+              children: [
+                for (var h in headers)
+                  pw.Container(
+                    padding: const pw.EdgeInsets.all(4),
+                    alignment: pw.Alignment.center,
+                    child: pw.Directionality(
+                      textDirection: isArabic(h)
+                          ? pw.TextDirection.rtl
+                          : pw.TextDirection.ltr,
+                      child: pw.Text(
+                        h,
+                        style: pw.TextStyle(
+                          font: pickFont(h),
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.white,
+                          fontSize: 9,
+                        ),
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: pw.TextOverflow.visible,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            // ⭐ Data rows with wrapping for product name
+            for (var row in data)
+              pw.TableRow(
+                children: [
+                  for (var i = 0; i < row.length; i++)
+                    pw.Container(
+  padding: const pw.EdgeInsets.all(4),
+
+  // ⭐ Arabic → right aligned, English → left aligned
+  alignment: isArabic(row[i])
+      ? pw.Alignment.centerRight
+      : pw.Alignment.centerLeft,
+
+  child: pw.Directionality(
+    textDirection: isArabic(row[i])
+        ? pw.TextDirection.rtl
+        : pw.TextDirection.ltr,
+
+    child: pw.Text(
+      row[i],
+      style: pw.TextStyle(
+        font: pickFont(row[i]),
+        fontSize: 8,
+      ),
+
+      // ⭐ Product name wraps into 2 lines
+      maxLines: (i == nameColumnIndex) ? 2 : 1,
+      softWrap: (i == nameColumnIndex),
+
+      overflow: (i == nameColumnIndex)
+          ? pw.TextOverflow.visible
+          : pw.TextOverflow.clip,
+    ),
+  ),
+),
+
+                ],
+              ),
+            if (selected['total'] == true)
+              pw.TableRow(
+                children: [
+                  for (var i = 0; i < selectedKeys.length; i++)
+                    pw.Container(
+                      padding: const pw.EdgeInsets.all(4),
+                      alignment: pw.Alignment.center,
+                      child: (selectedKeys[i] == 'total')
+                          ? pw.Text(
+                              grandTotal.toStringAsFixed(2),
+                              style: pw.TextStyle(
+                                font: pickFont(grandTotal.toString()),
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            )
+                          : (selectedKeys[i] ==
+                                  selectedKeys[selectedKeys.length - 2]
+                              ? pw.Text(
+                                  _t('total'),
+                                  style: pw.TextStyle(
+                                    font: pickFont(_t('total')),
+                                    fontWeight: pw.FontWeight.bold,
+                                    fontSize: 10,
+                                  ),
+                                )
+                              : pw.Text("")),
+                    ),
+                ],
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+  return pdf.save();
+}
   // ---------------------------------------------------------------------------
   // UI HELPER
   // ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import 'low_stock_page.dart';
 import 'monthly_report_page.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'stock_adjust_page.dart';
+import '../generated/app_localizations.dart';
 
 class ProductListPage extends StatefulWidget {
   const ProductListPage({super.key});
@@ -22,7 +23,7 @@ class ProductListPage extends StatefulWidget {
 
 class _ProductListPageState extends State<ProductListPage> {
   final ProductController _controller = ProductController();
-  final CartController _cart = CartController();
+  final CartController _cart = CartController.instance;
 
   List<Product> _products = [];
 
@@ -56,7 +57,9 @@ class _ProductListPageState extends State<ProductListPage> {
   void _openCart() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => CartPage(cart: _cart)),
+      MaterialPageRoute(
+        builder: (_) => CartPage(cart: CartController.instance),
+      ),
     ).then((_) => setState(() {}));
   }
 
@@ -67,41 +70,37 @@ class _ProductListPageState extends State<ProductListPage> {
     );
   }
 
-  // ---------------------------------------------------------
-  // Scanner (mobile_scanner v5.x)
-  // ---------------------------------------------------------
- Future<String?> _scanBarcode() async {
-  final tempScanner = MobileScannerController();
-  String? scannedCode;
+  Future<String?> _scanBarcode() async {
+    final t = AppLocalizations.of(context)!;
+    final tempScanner = MobileScannerController();
+    String? scannedCode;
 
-  await Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text("Scan Barcode")),
-        body: MobileScanner(
-          controller: tempScanner,
-          fit: BoxFit.cover,
-          onDetect: (capture) {
-            final barcode = capture.barcodes.first;
-            scannedCode = barcode.rawValue;
-            tempScanner.stop();
-            Navigator.pop(context);
-          },
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(title: Text(t.scanBarcode)),
+          body: MobileScanner(
+            controller: tempScanner,
+            fit: BoxFit.cover,
+            onDetect: (capture) {
+              final barcode = capture.barcodes.first;
+              scannedCode = barcode.rawValue;
+              tempScanner.stop();
+              Navigator.pop(context);
+            },
+          ),
         ),
       ),
-    ),
-  );
+    );
 
-  tempScanner.dispose();
-  return scannedCode;
-}
-
-  // ---------------------------------------------------------
-  // Scan actions
-  // ---------------------------------------------------------
+    tempScanner.dispose();
+    return scannedCode;
+  }
 
   Future<void> _scanAndAdjustStock() async {
+    final t = AppLocalizations.of(context)!;
+
     try {
       final code = await _scanBarcode();
       if (code == null) return;
@@ -110,7 +109,7 @@ class _ProductListPageState extends State<ProductListPage> {
 
       if (product == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("No product found for barcode: $code")),
+          SnackBar(content: Text("${t.noProductFound} $code")),
         );
         return;
       }
@@ -125,12 +124,14 @@ class _ProductListPageState extends State<ProductListPage> {
       if (result == true) _load();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Scanner error: $e")),
+        SnackBar(content: Text("${t.scannerError}: $e")),
       );
     }
   }
 
   Future<void> _scanAndAddNewProduct() async {
+    final t = AppLocalizations.of(context)!;
+
     try {
       final code = await _scanBarcode();
       if (code == null) return;
@@ -158,12 +159,14 @@ class _ProductListPageState extends State<ProductListPage> {
       if (result == true) _load();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Scanner error: $e")),
+        SnackBar(content: Text("${t.scannerError}: $e")),
       );
     }
   }
 
   Future<void> _scanAndEditProduct() async {
+    final t = AppLocalizations.of(context)!;
+
     try {
       final code = await _scanBarcode();
       if (code == null) return;
@@ -172,7 +175,7 @@ class _ProductListPageState extends State<ProductListPage> {
 
       if (product == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("No product found for barcode: $code")),
+          SnackBar(content: Text("${t.noProductFound} $code")),
         );
         return;
       }
@@ -185,18 +188,18 @@ class _ProductListPageState extends State<ProductListPage> {
       if (result == true) _load();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Scanner error: $e")),
+        SnackBar(content: Text("${t.scannerError}: $e")),
       );
     }
   }
 
-  // ---------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Products"),
+        title: Text(t.products),
         actions: [
           IconButton(
             icon: const Icon(Icons.qr_code_2),
@@ -256,7 +259,6 @@ class _ProductListPageState extends State<ProductListPage> {
           ),
         ],
       ),
-
       body: ListView.builder(
         itemCount: _products.length,
         itemBuilder: (context, i) {
@@ -265,32 +267,33 @@ class _ProductListPageState extends State<ProductListPage> {
           return ListTile(
             title: Text(p.name),
             subtitle: Text(
-              "Purchase: ${p.purchasePrice} | Sell1: ${p.sellPrice1} | Sell2: ${p.sellPrice2} | Stock: ${p.stock}",
+              "${t.purchase}: ${p.purchasePrice} | "
+              "${t.sell1}: ${p.sellPrice1} | "
+              "${t.sell2}: ${p.sellPrice2} | "
+              "${t.stock}: ${p.stock}",
             ),
             onTap: () => _openEdit(p),
             trailing: IconButton(
-  icon: const Icon(Icons.add_shopping_cart),
-  onPressed: () {
-    final ok = _cart.addToCart(p);
+              icon: const Icon(Icons.add_shopping_cart),
+              onPressed: () async {
+                final ok = await _cart.addToCart(p);
 
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("لا يمكن البيع بسعر أقل من سعر الشراء"),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+                if (!ok) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(t.cannotSellBelowPurchase),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  return;
+                }
 
-    setState(() {});
-  },
-),
-
+                setState(() {});
+              },
+            ),
           );
         },
       ),
-
       floatingActionButton: FloatingActionButton(
         onPressed: _openAdd,
         child: const Icon(Icons.add),

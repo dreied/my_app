@@ -7,11 +7,12 @@ class Product {
   final double sellPrice3;
   final int stock;
 
-  // NEW FIELD (placed under stock exactly as you requested)
   final String unit; // "pieces", "half", "dozen"
-
   final String barcode;
   final String? category;
+
+  // 0 = active, 1 = deleted (soft delete)
+  final int isDeleted;
 
   Product({
     this.id,
@@ -21,10 +22,39 @@ class Product {
     required this.sellPrice2,
     required this.sellPrice3,
     required this.stock,
-    required this.unit, // NEW
+    required this.unit,
     required this.barcode,
     this.category,
+    this.isDeleted = 0,
   });
+
+  Product copyWith({
+    int? id,
+    String? name,
+    double? purchasePrice,
+    double? sellPrice1,
+    double? sellPrice2,
+    double? sellPrice3,
+    int? stock,
+    String? unit,
+    String? barcode,
+    String? category,
+    int? isDeleted,
+  }) {
+    return Product(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      purchasePrice: purchasePrice ?? this.purchasePrice,
+      sellPrice1: sellPrice1 ?? this.sellPrice1,
+      sellPrice2: sellPrice2 ?? this.sellPrice2,
+      sellPrice3: sellPrice3 ?? this.sellPrice3,
+      stock: stock ?? this.stock,
+      unit: unit ?? this.unit,
+      barcode: barcode ?? this.barcode,
+      category: category ?? this.category,
+      isDeleted: isDeleted ?? this.isDeleted,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -35,9 +65,10 @@ class Product {
       'sell_price2': sellPrice2,
       'sell_price3': sellPrice3,
       'stock': stock,
-      'unit': unit, // NEW
+      'unit': unit,
       'barcode': barcode,
       'category': category,
+      'is_deleted': isDeleted,
     };
   }
 
@@ -50,12 +81,11 @@ class Product {
       sellPrice2: (map['sell_price2'] as num).toDouble(),
       sellPrice3: (map['sell_price3'] as num).toDouble(),
       stock: map['stock'] as int,
-
-      // NEW — backward compatible: if missing, default to "pieces"
+      // backward compatible
       unit: map['unit']?.toString() ?? "pieces",
-
-      barcode: map['barcode'] ?? '',
-      category: map['category'],
+      barcode: map['barcode']?.toString() ?? "",
+      category: map['category'] as String?,
+      isDeleted: (map['is_deleted'] as int?) ?? 0,
     );
   }
 }

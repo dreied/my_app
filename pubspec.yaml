@@ -2,7 +2,8 @@ name: my_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
+
 
 environment:
   sdk: ^3.10.8
@@ -11,27 +12,82 @@ dependencies:
   flutter:
     sdk: flutter
 
-  mobile_scanner: ^7.1.4
+  flutter_localizations:
+    sdk: flutter
+
+  mobile_scanner: ^3.5.5
   sqflite: ^2.4.2
   path: ^1.9.1
-  intl: ^0.20.2
-  excel: 2.1.0
+  path_provider: ^2.1.5
+  file_picker: ^8.0.0
+  shared_preferences: ^2.3.2
+  open_filex: ^4.3.2
+  package_info_plus: ^9.0.1
+  # PDF RECEIPTS (modern)
+  pdf: ^3.11.3
+  google_fonts: ^6.2.1
+  printing: ^5.14.2
 
-  path_provider: ^2.0.15
-  shared_preferences: ^2.2.2
-  pdf: ^3.11.0
-  printing: ^5.13.0
-  file_picker: ^10.3.10
+  # BLUETOOTH THERMAL (XP-P801)
+  blue_thermal_printer: ^1.2.0
+
+  intl: ^0.20.2
+  excel: ^2.1.0
   cupertino_icons: ^1.0.8
+  audioplayers: ^6.5.1
+  permission_handler: ^11.3.1
+  data_table_2: ^2.5.9
+  share_plus: ^7.0.0
+  mailer: ^6.6.0
+  flutter_secure_storage: ^9.0.0 
+  crypto: ^3.0.3
+  device_info_plus: ^10.0.0
+  url_launcher: ^6.2.5
+  pointycastle: ^3.9.0 
+  basic_utils: ^5.7.0
+  font_awesome_flutter: ^10.7.0
+  local_auth: ^2.1.0
+  
+  lottie: ^3.1.0
+
+
+
+
+  
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^6.0.0
+  flutter_lints: 6.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
+
+flutter_native_splash:
+  color: "#FFFFFF"        # background color
+  image: assets/logo.png  # your logo
+  android: true
+  ios: true
+  android_gravity: center
+  ios_content_mode: center
+
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/logo.png"
+  
 
 flutter:
   uses-material-design: true
+  generate: true
   assets:
     - assets/fonts/NotoNaskhArabic-Regular.ttf
     - assets/fonts/Roboto-Regular.ttf
+    - assets/sounds/beep.mp3
+    - assets/icons/
+    - assets/icons/icons.txt
+    - assets/lottie/
+
 

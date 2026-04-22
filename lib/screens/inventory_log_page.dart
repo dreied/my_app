@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/app_database.dart';
+import '../generated/app_localizations.dart';
 
 class InventoryLogPage extends StatefulWidget {
   const InventoryLogPage({super.key});
@@ -32,8 +33,10 @@ class _InventoryLogPageState extends State<InventoryLogPage> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Inventory Log")),
+      appBar: AppBar(title: Text(t.inventoryLog)),
       body: ListView.builder(
         itemCount: _logs.length,
         itemBuilder: (context, i) {
@@ -43,7 +46,7 @@ class _InventoryLogPageState extends State<InventoryLogPage> {
           return ListTile(
             title: Text(log['name']),
             subtitle: Text(
-              "Change: $qty | Date: ${log['datetime']}",
+              "${t.change}: $qty | ${t.date}: ${log['datetime']}",
             ),
             trailing: qty < 0
                 ? const Icon(Icons.remove, color: Colors.red)

@@ -1,0 +1,5 @@
+bar.png
+perfume.png
+shampoo.png
+spray.png
+stick.png

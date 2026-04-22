@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 import '../controllers/product_controller.dart';
 import '../database/category_dao.dart';
 import '../models/category.dart';
 import '../models/product.dart';
 import 'stock_adjust_page.dart';
+import '../widgets/embedded_scanner_box.dart';
+import '../generated/app_localizations.dart';
+import '../utils/pin_guard.dart'; // <-- Unified PIN guard
 
 class EditProductPage extends StatefulWidget {
   final Product product;
@@ -27,13 +29,13 @@ class _EditProductPageState extends State<EditProductPage> {
   late TextEditingController _stockController;
   late TextEditingController _barcodeController;
   late TextEditingController _categoryController;
-
-  // NEW — unit controller
   late TextEditingController _unitController;
 
   List<Category> _categories = [];
   bool _saving = false;
   bool _loadingCategories = true;
+
+  bool showScanner = false;
 
   @override
   void initState() {
@@ -48,16 +50,11 @@ class _EditProductPageState extends State<EditProductPage> {
     _stockController = TextEditingController(text: p.stock.toString());
     _barcodeController = TextEditingController(text: p.barcode);
     _categoryController = TextEditingController(text: p.category ?? "");
-
-    // NEW — load existing unit
     _unitController = TextEditingController(text: p.unit);
 
     _loadCategories();
   }
 
-  // ---------------------------------------------------------
-  // LOAD CATEGORIES (freeze-proof)
-  // ---------------------------------------------------------
   Future<void> _loadCategories() async {
     final list = await _categoryDao.getAll();
     final current = _categoryController.text.trim();
@@ -72,71 +69,38 @@ class _EditProductPageState extends State<EditProductPage> {
     });
   }
 
-  // ---------------------------------------------------------
-  // ADD NEW CATEGORY
-  // ---------------------------------------------------------
   Future<String?> _showAddCategoryDialog() async {
+    final t = AppLocalizations.of(context)!;
     final controller = TextEditingController();
 
     return showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Add New Category"),
+        title: Text(t.addNewCategory),
         content: TextField(
           controller: controller,
-          decoration: const InputDecoration(
-            labelText: "Category Name",
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: t.categoryName,
+            border: const OutlineInputBorder(),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
+            child: Text(t.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text("Add"),
+            child: Text(t.add),
           ),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------
-  // BARCODE SCAN
-  // ---------------------------------------------------------
-  Future<void> _scanBarcode() async {
-    final controller = MobileScannerController();
-    String? scannedCode;
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(title: const Text("Scan Barcode")),
-          body: MobileScanner(
-            controller: controller,
-            onDetect: (capture) {
-              final barcode = capture.barcodes.first;
-              scannedCode = barcode.rawValue;
-              controller.stop();
-              Navigator.pop(context);
-            },
-          ),
-        ),
-      ),
-    );
-
-    if (scannedCode != null && scannedCode!.isNotEmpty) {
-      setState(() => _barcodeController.text = scannedCode!);
-    }
-  }
-
-  // ---------------------------------------------------------
-  // SAVE PRODUCT
-  // ---------------------------------------------------------
   Future<void> _save() async {
+    final t = AppLocalizations.of(context)!;
+
     final name = _nameController.text.trim();
     final purchase = double.tryParse(_purchaseController.text.trim()) ?? 0;
     final sell1 = double.tryParse(_sell1Controller.text.trim()) ?? 0;
@@ -145,25 +109,52 @@ class _EditProductPageState extends State<EditProductPage> {
     final stock = int.tryParse(_stockController.text.trim()) ?? 0;
     final barcode = _barcodeController.text.trim();
     final category = _categoryController.text.trim();
-    final unit = _unitController.text.trim(); // NEW
+    final unit = _unitController.text.trim();
 
-    if (sell1 < purchase || sell2 < purchase || sell3 < purchase) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("لا يمكن أن يكون سعر البيع أقل من سعر الشراء")),
-      );
-      return;
-    }
+   // ⭐ Sell Price 1 must not be below purchase
+if (sell1 < purchase) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(t.sellPriceBelowPurchase)),
+  );
+  return;
+}
 
-    if (name.isEmpty ||
-        purchase <= 0 ||
-        sell1 <= 0 ||
-        sell2 <= 0 ||
-        sell3 <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Invalid product details")),
-      );
-      return;
-    }
+// ⭐ Sell Price 2 must not be below purchase
+if (sell2 < purchase) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(t.sellPriceBelowPurchase)),
+  );
+  return;
+}
+
+// ⭐ Sell Price 3 can be empty — only validate if user typed something
+if (_sell3Controller.text.trim().isNotEmpty) {
+  final sell3 = double.tryParse(_sell3Controller.text.trim()) ?? 0;
+
+  if (sell3 < purchase) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.sellPriceBelowPurchase)),
+    );
+    return;
+  }
+}
+
+// ⭐ Required fields (sell3 is NOT required)
+if (name.isEmpty ||
+    purchase <= 0 ||
+    sell1 <= 0 ||
+    sell2 <= 0) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(t.invalidProductDetails)),
+  );
+  return;
+}
+
+
+
+    // 🔥 Unified PIN guard
+    final pinOk = await requireManagerPin(context);
+    if (!pinOk) return;
 
     setState(() => _saving = true);
 
@@ -175,7 +166,7 @@ class _EditProductPageState extends State<EditProductPage> {
       sellPrice2: sell2,
       sellPrice3: sell3,
       stock: stock,
-      unit: unit, // NEW
+      unit: unit,
       barcode: barcode,
       category: category.isEmpty ? null : category,
     );
@@ -186,19 +177,53 @@ class _EditProductPageState extends State<EditProductPage> {
     Navigator.pop(context, true);
   }
 
-  // ---------------------------------------------------------
-  // DELETE PRODUCT
-  // ---------------------------------------------------------
-  Future<void> _delete() async {
-    await _controller.deleteProduct(widget.product.id!);
-    Navigator.pop(context, true);
+Future<void> _delete() async {
+  final t = AppLocalizations.of(context)!;
+
+  // Confirm move to trash
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(t.moveToTrash),
+      content: Text(t.confirmMoveToTrash),
+      actions: [
+        TextButton(
+          child: Text(t.cancel),
+          onPressed: () => Navigator.pop(context, false),
+        ),
+        ElevatedButton(
+          child: Text(t.moveToTrash),
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm != true) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(t.deletionCancelled)),
+    );
+    return;
   }
 
-  // ---------------------------------------------------------
-  // UI
-  // ---------------------------------------------------------
+  // PIN guard
+  if (!await requireManagerPin(context)) return;
+
+  // Soft delete
+  await _controller.softDeleteProduct(widget.product.id!);
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(t.movedToTrash)),
+  );
+
+  Navigator.pop(context, true);
+}
+
+
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     if (_loadingCategories) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -206,16 +231,24 @@ class _EditProductPageState extends State<EditProductPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text("Edit Product")),
+      appBar: AppBar(title: Text(t.editProduct)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            if (showScanner)
+              SizedBox(
+                height: 160,
+                child: const EmbeddedScannerBox(),
+              ),
+
+            const SizedBox(height: 12),
+
             TextField(
               controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: "Product Name",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.productName,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -224,9 +257,9 @@ class _EditProductPageState extends State<EditProductPage> {
               value: _categoryController.text.isEmpty
                   ? null
                   : _categoryController.text,
-              decoration: const InputDecoration(
-                labelText: "Category",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.category,
+                border: const OutlineInputBorder(),
               ),
               items: [
                 ..._categories.map(
@@ -235,13 +268,13 @@ class _EditProductPageState extends State<EditProductPage> {
                     child: Text(c.name),
                   ),
                 ),
-                const DropdownMenuItem(
+                DropdownMenuItem(
                   value: "__add_new__",
                   child: Row(
                     children: [
-                      Icon(Icons.add, color: Colors.blue),
-                      SizedBox(width: 8),
-                      Text("Add New Category"),
+                      const Icon(Icons.add, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      Text(t.addNewCategory),
                     ],
                   ),
                 ),
@@ -266,9 +299,9 @@ class _EditProductPageState extends State<EditProductPage> {
             TextField(
               controller: _purchaseController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Purchase Price",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.purchasePrice,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -276,9 +309,9 @@ class _EditProductPageState extends State<EditProductPage> {
             TextField(
               controller: _sell1Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 1 (مفرق)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice1,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -286,9 +319,9 @@ class _EditProductPageState extends State<EditProductPage> {
             TextField(
               controller: _sell2Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 2 (جملة)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice2,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -296,9 +329,9 @@ class _EditProductPageState extends State<EditProductPage> {
             TextField(
               controller: _sell3Controller,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Sell Price 3 (مخصص)",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.sellPrice3,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -306,33 +339,23 @@ class _EditProductPageState extends State<EditProductPage> {
             TextField(
               controller: _stockController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: "Stock",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.stock,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
 
-            // NEW — UNIT DROPDOWN
             DropdownButtonFormField<String>(
               value: _unitController.text,
-              decoration: const InputDecoration(
-                labelText: "Unit",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: t.unit,
+                border: const OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(
-                  value: "pieces",
-                  child: Text("Pieces"),
-                ),
-                DropdownMenuItem(
-                  value: "half",
-                  child: Text("Half‑Dozen (6)"),
-                ),
-                DropdownMenuItem(
-                  value: "dozen",
-                  child: Text("Dozen (12)"),
-                ),
+              items: [
+                DropdownMenuItem(value: "pieces", child: Text(t.unitPieces)),
+                DropdownMenuItem(value: "half", child: Text(t.unitHalfDozen)),
+                DropdownMenuItem(value: "dozen", child: Text(t.unitDozen)),
               ],
               onChanged: (value) {
                 if (value != null) {
@@ -348,15 +371,20 @@ class _EditProductPageState extends State<EditProductPage> {
                 Expanded(
                   child: TextField(
                     controller: _barcodeController,
-                    decoration: const InputDecoration(
-                      labelText: "Barcode",
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: t.barcode,
+                      border: const OutlineInputBorder(),
                     ),
                   ),
                 ),
                 const SizedBox(width: 10),
+
                 ElevatedButton(
-                  onPressed: _scanBarcode,
+                  onPressed: () {
+                    setState(() {
+                      showScanner = !showScanner;
+                    });
+                  },
                   child: const Icon(Icons.qr_code_scanner),
                 ),
               ],
@@ -366,15 +394,16 @@ class _EditProductPageState extends State<EditProductPage> {
 
             ElevatedButton(
               onPressed: _saving ? null : _save,
-              child: const Text("Save Changes"),
+              child: Text(t.saveChanges),
             ),
             const SizedBox(height: 10),
 
             ElevatedButton(
-              onPressed: _delete,
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text("Delete Product"),
-            ),
+  onPressed: _delete,
+  style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+  child: Text(t.moveToTrash),
+),
+
             const SizedBox(height: 10),
 
             ElevatedButton(
@@ -390,7 +419,7 @@ class _EditProductPageState extends State<EditProductPage> {
                   }
                 });
               },
-              child: const Text("Adjust Stock"),
+              child: Text(t.adjustStock),
             ),
           ],
         ),

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import '../database/category_dao.dart';
 import '../models/category.dart';
-import '../controllers/product_controller.dart';
+import '../database/category_dao.dart';
+import '../services/icon_loader.dart';
+import '../generated/app_localizations.dart';
 
 class CategoryManagementPage extends StatefulWidget {
   const CategoryManagementPage({super.key});
@@ -12,413 +13,276 @@ class CategoryManagementPage extends StatefulWidget {
 
 class _CategoryManagementPageState extends State<CategoryManagementPage> {
   final CategoryDao _dao = CategoryDao();
-  final ProductController _productController = ProductController();
 
   List<Category> _categories = [];
-  Map<int, int> _usageMap = {}; // categoryId -> product count
+  List<Category> _filtered = [];
+  List<String> _availableIcons = [];
 
-  String _searchQuery = "";
-  String _sortMode = "name_asc"; // name_asc, name_desc, usage_desc, usage_asc
+  String _search = "";
+  String _sortMode = "name";
+
+  final List<String> _colors = [
+    "#FF5722", "#4CAF50", "#2196F3", "#9C27B0",
+    "#FFC107", "#009688", "#000000", "#FF0000",
+  ];
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _loadIcons();
+    _loadCategories();
   }
 
-  Future<void> _load() async {
-    final list = await _dao.getAll();
+  Future<void> _loadIcons() async {
+    final icons = await IconLoader.loadIcons();
+    setState(() => _availableIcons = icons.isEmpty ? ["bar.png"] : icons);
+  }
 
-    // build usage map
-    final usage = <int, int>{};
-    for (final c in list) {
-      if (c.id != null) {
-        final count = await _productController.countProductsInCategory(c.name);
-        usage[c.id!] = count;
-      }
-    }
-
+  Future<void> _loadCategories() async {
+    final cats = await _dao.getAll();
     setState(() {
-      _categories = list;
-      _usageMap = usage;
+      _categories = cats;
+      _applyFilters();
     });
-
-    _applySorting();
   }
 
-  // -----------------------------
-  // COLOR PICKER
-  // -----------------------------
-  Future<String?> _pickColor(String? current) async {
-    final colors = [
-      "#FF0000", "#00AA00", "#0000FF", "#FFA500", "#800080",
-      "#008080", "#444444", "#FFC0CB", "#00CED1", "#FFD700"
-    ];
+  void _applyFilters() {
+    _filtered = _categories.where((c) {
+      return c.name.toLowerCase().contains(_search.toLowerCase());
+    }).toList();
 
-    return showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Pick Color"),
-        content: SizedBox(
-          width: 300,
-          height: 200,
-          child: GridView.count(
-            crossAxisCount: 5,
-            children: colors.map((hex) {
-              return GestureDetector(
-                onTap: () => Navigator.pop(context, hex),
-                child: Container(
-                  margin: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: Color(int.parse(hex.replaceFirst('#', '0xff'))),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: current == hex ? Colors.black : Colors.white,
-                      width: 2,
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
+    if (_sortMode == "name") {
+      _filtered.sort((a, b) => a.name.compareTo(b.name));
+    }
+
+    setState(() {});
   }
 
-  // -----------------------------
-  // ICON PICKER
-  // -----------------------------
-  Future<String?> _pickIcon(String? current) async {
-    final icons = {
-      "restaurant": Icons.restaurant,
-      "local_drink": Icons.local_drink,
-      "fastfood": Icons.fastfood,
-      "cleaning_services": Icons.cleaning_services,
-      "category": Icons.category,
-    };
+  void _openCategoryDialog({Category? category}) {
+    final t = AppLocalizations.of(context)!;
+    final isEditing = category != null;
 
-    return showDialog<String>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Pick Icon"),
-        content: SizedBox(
-          width: 300,
-          height: 200,
-          child: GridView.count(
-            crossAxisCount: 4,
-            children: icons.entries.map((entry) {
-              return GestureDetector(
-                onTap: () => Navigator.pop(context, entry.key),
-                child: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: current == entry.key ? Colors.blue : Colors.grey,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(entry.value, size: 30),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // -----------------------------
-  // ADD / EDIT CATEGORY
-  // -----------------------------
-  Future<void> _editCategory(Category? category) async {
     final nameController = TextEditingController(text: category?.name ?? "");
+    String selectedIcon = category?.icon ?? "bar.png";
     String? selectedColor = category?.color;
-    String? selectedIcon = category?.icon;
 
-    final result = await showDialog<bool>(
+    void unfocus() => FocusScope.of(context).unfocus();
+
+    showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text(category == null ? "Add Category" : "Edit Category"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: "Category Name",
-                border: OutlineInputBorder(),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(isEditing ? t.editCategory : t.addCategory),
+              content: SizedBox(
+                width: 400,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: nameController,
+                        decoration: InputDecoration(
+                          labelText: t.categoryName,
+                          border: const OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      Text(t.selectIcon),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 200,
+                        child: GridView.count(
+                          crossAxisCount: 4,
+                          children: _availableIcons.map((icon) {
+                            return GestureDetector(
+                              onTap: () {
+                                unfocus();
+                                setDialogState(() => selectedIcon = icon);
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.all(6),
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: selectedIcon == icon
+                                        ? Colors.blue
+                                        : Colors.grey,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Image.asset(
+                                  "assets/icons/$icon",
+                                  width: 40,
+                                  height: 40,
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      Text(t.selectColor),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        height: 120,
+                        child: GridView.count(
+                          crossAxisCount: 6,
+                          children: _colors.map((hex) {
+                            return GestureDetector(
+                              onTap: () {
+                                unfocus();
+                                setDialogState(() => selectedColor = hex);
+                              },
+                              child: Container(
+                                margin: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Color(
+                                      int.parse(hex.replaceFirst('#', '0xff'))),
+                                  border: Border.all(
+                                    color: selectedColor == hex
+                                        ? Colors.black
+                                        : Colors.transparent,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
+              actions: [
+                TextButton(
+                  child: Text(t.cancel),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                ElevatedButton(
+                  child: Text(isEditing ? t.save : t.add),
+                  onPressed: () async {
+                    final name = nameController.text.trim();
+                    if (name.isEmpty) return;
 
-            // Color picker
-            Row(
-              children: [
-                const Text("Color: "),
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await _pickColor(selectedColor);
-                    if (picked != null) {
-                      setState(() => selectedColor = picked);
+                    final newCategory = Category(
+                      id: category?.id,
+                      name: name,
+                      color: selectedColor,
+                      icon: selectedIcon,
+                    );
+
+                    if (isEditing) {
+                      await _dao.update(newCategory);
+                    } else {
+                      await _dao.insert(newCategory);
                     }
+
+                    Navigator.pop(context);
+                    _loadCategories();
                   },
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: selectedColor != null
-                          ? Color(int.parse(selectedColor!.replaceFirst('#', '0xff')))
-                          : Colors.grey,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
                 ),
               ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Icon picker
-            Row(
-              children: [
-                const Text("Icon: "),
-                GestureDetector(
-                  onTap: () async {
-                    final picked = await _pickIcon(selectedIcon);
-                    if (picked != null) {
-                      setState(() => selectedIcon = picked);
-                    }
-                  },
-                  child: Icon(
-                    selectedIcon == null
-                        ? Icons.category
-                        : _iconFromName(selectedIcon!),
-                    size: 28,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Save"),
-          ),
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
-
-    if (result == true) {
-      final name = nameController.text.trim();
-      if (name.isEmpty) return;
-
-      final newCategory = Category(
-        id: category?.id,
-        name: name,
-        color: selectedColor,
-        icon: selectedIcon,
-      );
-
-      if (category == null) {
-        await _dao.insert(newCategory);
-      } else {
-        await _dao.update(newCategory);
-      }
-
-      await _load();
-    }
   }
 
-  IconData _iconFromName(String name) {
-    switch (name) {
-      case "restaurant":
-        return Icons.restaurant;
-      case "local_drink":
-        return Icons.local_drink;
-      case "fastfood":
-        return Icons.fastfood;
-      case "cleaning_services":
-        return Icons.cleaning_services;
-      default:
-        return Icons.category;
-    }
-  }
+  Future<void> _deleteCategory(Category c) async {
+    final t = AppLocalizations.of(context)!;
 
-  // -----------------------------
-  // DELETE CATEGORY (with protection)
-  // -----------------------------
-  Future<void> _deleteCategory(Category category) async {
-    final usage = category.id != null ? _usageMap[category.id!] ?? 0 : 0;
-
-    if (usage > 0) {
+    if (await _dao.hasProducts(c.name)) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            "Cannot delete '${category.name}'. It is used by $usage products.",
-          ),
+          content: Text(t.cannotDeleteCategoryWithProducts),
+          backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Delete Category"),
-        content: Text("Delete '${category.name}'?"),
+    await _dao.delete(c.id!);
+    _loadCategories();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(t.manageCategories),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              setState(() {
+                _sortMode = value;
+                _applyFilters();
+              });
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: "name",
+                child: Text(t.sortByName),
+              ),
+            ],
           ),
         ],
       ),
-    );
 
-    if (confirm == true) {
-      await _dao.delete(category.id!);
-      await _load();
-    }
-  }
-
-  // -----------------------------
-  // SORTING + SEARCH
-  // -----------------------------
-  void _applySorting() {
-    setState(() {
-      _categories.sort((a, b) {
-        final usageA = a.id != null ? _usageMap[a.id!] ?? 0 : 0;
-        final usageB = b.id != null ? _usageMap[b.id!] ?? 0 : 0;
-
-        switch (_sortMode) {
-          case "name_desc":
-            return b.name.toLowerCase().compareTo(a.name.toLowerCase());
-          case "usage_desc":
-            return usageB.compareTo(usageA);
-          case "usage_asc":
-            return usageA.compareTo(usageB);
-          case "name_asc":
-          default:
-            return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-        }
-      });
-    });
-  }
-
-  List<Category> get _filteredCategories {
-    if (_searchQuery.isEmpty) return _categories;
-    return _categories
-        .where((c) => c.name.toLowerCase().contains(_searchQuery))
-        .toList();
-  }
-
-  // -----------------------------
-  // UI
-  // -----------------------------
-  @override
-  Widget build(BuildContext context) {
-    final filtered = _filteredCategories;
-
-    return Scaffold(
-      appBar: AppBar(title: const Text("Manage Categories")),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => _editCategory(null),
+        onPressed: () => _openCategoryDialog(),
         child: const Icon(Icons.add),
       ),
+
       body: Column(
         children: [
-          // SEARCH
           Padding(
-            padding: const EdgeInsets.all(8.0),
+            padding: const EdgeInsets.all(8),
             child: TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: "Search categories",
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: t.searchCategories,
+                border: const OutlineInputBorder(),
               ),
               onChanged: (value) {
-                setState(() => _searchQuery = value.toLowerCase());
+                _search = value;
+                _applyFilters();
               },
             ),
           ),
 
-          // SORT
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-            child: Row(
-              children: [
-                const Text("Sort by: "),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: _sortMode,
-                  items: const [
-                    DropdownMenuItem(
-                      value: "name_asc",
-                      child: Text("Name A–Z"),
-                    ),
-                    DropdownMenuItem(
-                      value: "name_desc",
-                      child: Text("Name Z–A"),
-                    ),
-                    DropdownMenuItem(
-                      value: "usage_desc",
-                      child: Text("Most Used"),
-                    ),
-                    DropdownMenuItem(
-                      value: "usage_asc",
-                      child: Text("Least Used"),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() => _sortMode = value);
-                    _applySorting();
-                  },
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          // LIST
           Expanded(
             child: ListView.builder(
-              itemCount: filtered.length,
+              itemCount: _filtered.length,
               itemBuilder: (_, i) {
-                final c = filtered[i];
-                final usage =
-                    c.id != null ? _usageMap[c.id!] ?? 0 : 0;
+                final c = _filtered[i];
 
                 return ListTile(
                   leading: CircleAvatar(
                     backgroundColor: c.color != null
-                        ? Color(int.parse(c.color!.replaceFirst('#', '0xff')))
+                        ? Color(int.parse(
+                            c.color!.replaceFirst('#', '0xff')))
                         : Colors.grey,
-                    child: Icon(
-                      _iconFromName(c.icon ?? "category"),
-                      color: Colors.white,
+                    child: Image.asset(
+                      "assets/icons/${c.icon}",
+                      width: 24,
                     ),
                   ),
-                  title: Text(c.name),
-                  subtitle: Text("$usage products"),
+                  title: Text("${c.name} (${c.productCount})"),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        icon: const Icon(Icons.edit),
-                        onPressed: () => _editCategory(c),
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () => _openCategoryDialog(category: c),
                       ),
                       IconButton(
                         icon: const Icon(Icons.delete, color: Colors.red),

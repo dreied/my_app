@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../database/app_database.dart';
+import '../generated/app_localizations.dart';
 
 class MonthlyReportPage extends StatefulWidget {
   const MonthlyReportPage({super.key});
@@ -9,10 +10,7 @@ class MonthlyReportPage extends StatefulWidget {
 }
 
 class _MonthlyReportPageState extends State<MonthlyReportPage> {
-  double totalSales = 0;
-  int totalItems = 0;
-  double totalProfit = 0;
-  List<Map<String, dynamic>> topProducts = [];
+  List<Map<String, dynamic>> monthlyReports = [];
 
   @override
   void initState() {
@@ -20,95 +18,142 @@ class _MonthlyReportPageState extends State<MonthlyReportPage> {
     _loadReport();
   }
 
-  Future<void> _loadReport() async {
+  Future<List<String>> _getAllMonths() async {
     final db = await AppDatabase.instance.database;
 
-    final now = DateTime.now();
-    final month = now.toIso8601String().substring(0, 7); // YYYY-MM
-
-    // Total sales
-    final salesResult = await db.rawQuery('''
-      SELECT SUM(total) as total
+    final result = await db.rawQuery('''
+      SELECT DISTINCT SUBSTR(datetime, 1, 7) AS month
       FROM sales
-      WHERE datetime LIKE '$month%'
+      ORDER BY month DESC
     ''');
 
-    // Total items sold
-    final itemsResult = await db.rawQuery('''
-      SELECT SUM(qty) as qty
-      FROM sale_items
-      JOIN sales ON sale_items.sale_id = sales.id
-      WHERE sales.datetime LIKE '$month%'
-    ''');
+    return result.map((row) => row['month'] as String).toList();
+  }
 
-    // Profit = (sell price - purchase price) * qty
-    final profitResult = await db.rawQuery('''
-      SELECT SUM((sale_items.price - products.purchase_price) * sale_items.qty) AS profit
-      FROM sale_items
-      JOIN products ON sale_items.product_id = products.id
-      JOIN sales ON sale_items.sale_id = sales.id
-      WHERE sales.datetime LIKE '$month%'
-    ''');
+  String localizeMonth(BuildContext context, String ym) {
+    final t = AppLocalizations.of(context)!;
+    final parts = ym.split("-");
+    final year = parts[0];
+    final month = int.parse(parts[1]);
 
-    // Top 5 products
-    final topResult = await db.rawQuery('''
-      SELECT products.name, SUM(sale_items.qty) as total_qty
-      FROM sale_items
-      JOIN products ON sale_items.product_id = products.id
-      JOIN sales ON sale_items.sale_id = sales.id
-      WHERE sales.datetime LIKE '$month%'
-      GROUP BY sale_items.product_id
-      ORDER BY total_qty DESC
-      LIMIT 5
-    ''');
+    final monthNames = [
+      t.january,
+      t.february,
+      t.march,
+      t.april,
+      t.may,
+      t.june,
+      t.july,
+      t.august,
+      t.september,
+      t.october,
+      t.november,
+      t.december,
+    ];
+
+    return "${monthNames[month - 1]} $year";
+  }
+
+  Future<void> _loadReport() async {
+    final db = await AppDatabase.instance.database;
+    final months = await _getAllMonths();
+
+    List<Map<String, dynamic>> reports = [];
+
+    for (final month in months) {
+      final salesResult = await db.rawQuery('''
+        SELECT SUM(total) as total
+        FROM sales
+        WHERE datetime LIKE '$month%'
+      ''');
+
+      final itemsResult = await db.rawQuery('''
+        SELECT SUM(qty) as qty
+        FROM sale_items
+        JOIN sales ON sale_items.sale_id = sales.id
+        WHERE sales.datetime LIKE '$month%'
+      ''');
+
+      final profitResult = await db.rawQuery('''
+        SELECT SUM((sale_items.price - products.purchase_price) * sale_items.qty) AS profit
+        FROM sale_items
+        JOIN products ON sale_items.product_id = products.id
+        JOIN sales ON sale_items.sale_id = sales.id
+        WHERE sales.datetime LIKE '$month%'
+      ''');
+
+      final topResult = await db.rawQuery('''
+        SELECT products.name, SUM(sale_items.qty) as total_qty
+        FROM sale_items
+        JOIN products ON sale_items.product_id = products.id
+        JOIN sales ON sale_items.sale_id = sales.id
+        WHERE sales.datetime LIKE '$month%'
+        GROUP BY sale_items.product_id
+        ORDER BY total_qty DESC
+        LIMIT 5
+      ''');
+
+      reports.add({
+        "month": month,
+        "totalSales": (salesResult.first['total'] as num?)?.toDouble() ?? 0.0,
+        "totalItems": (itemsResult.first['qty'] as num?)?.toInt() ?? 0,
+        "totalProfit": (profitResult.first['profit'] as num?)?.toDouble() ?? 0.0,
+        "topProducts": topResult,
+      });
+    }
 
     setState(() {
-      totalSales = (salesResult.first['total'] as num?)?.toDouble() ?? 0.0;
-      totalItems = (itemsResult.first['qty'] as num?)?.toInt() ?? 0;
-      totalProfit = (profitResult.first['profit'] as num?)?.toDouble() ?? 0.0;
-      topProducts = topResult;
+      monthlyReports = reports;
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+
     return Scaffold(
-      appBar: AppBar(title: const Text("Monthly Report")),
-      body: Padding(
+      appBar: AppBar(title: Text(t.monthlyReport)),
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        child: ListView(
-          children: [
-            Card(
-              child: ListTile(
-                title: const Text("Total Sales This Month"),
-                subtitle: Text("$totalSales"),
+        children: [
+          ...monthlyReports.map((m) {
+            return ExpansionTile(
+              title: Text(
+                localizeMonth(context, m["month"]),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
-            ),
-            Card(
-              child: ListTile(
-                title: const Text("Total Items Sold"),
-                subtitle: Text("$totalItems"),
-              ),
-            ),
-            Card(
-              child: ListTile(
-                title: const Text("Total Profit"),
-                subtitle: Text("$totalProfit"),
-              ),
-            ),
-            const SizedBox(height: 20),
-            const Text(
-              "Top Selling Products",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            ...topProducts.map((p) {
-              return ListTile(
-                title: Text(p['name']),
-                trailing: Text("Sold: ${p['total_qty']}"),
-              );
-            }),
-          ],
-        ),
+              children: [
+                ListTile(
+                  title: Text(t.totalSalesThisMonth),
+                  subtitle: Text("${m['totalSales']}"),
+                ),
+                ListTile(
+                  title: Text(t.totalItemsSold),
+                  subtitle: Text("${m['totalItems']}"),
+                ),
+                ListTile(
+                  title: Text(t.totalProfit),
+                  subtitle: Text("${m['totalProfit']}"),
+                ),
+
+                const SizedBox(height: 10),
+                Text(
+                  t.topSellingProducts,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+
+                ...m["topProducts"].map<Widget>((p) {
+                  return ListTile(
+                    title: Text(p['name']),
+                    trailing: Text("${t.sold}: ${p['total_qty']}"),
+                  );
+                }).toList(),
+
+                const SizedBox(height: 20),
+              ],
+            );
+          }),
+        ],
       ),
     );
   }
